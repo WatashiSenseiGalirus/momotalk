@@ -154,6 +154,12 @@ function nameFixMap() {
   _nameFix = { n: LIST.length, m };
   return m;
 }
+/* daftar murid per sekolah untuk prompt AI (supaya karakter tahu siapa teman dan siapa murid sekolah lain) */
+function schoolRoster() {
+  const g = new Map();
+  for (const s of LIST) { const sc = s.det?.school; if (!sc) continue; if (!g.has(sc)) g.set(sc, []); const n = promptName(s).replace(/\s*\(.*\)$/, ''); if (!g.get(sc).includes(n)) g.get(sc).push(n); }
+  return [...g].map(([school, names]) => ({ school, names }));
+}
 function fixNames(text) {
   const m = nameFixMap();
   return String(text || '').replace(/\p{L}{4,}/gu, w => m.get(lI(w)) || w);
@@ -445,13 +451,13 @@ function systemPrompt() {
   const mention = state.mention || [];
   const offer = st.invites !== false && mem.length < maxRoom() && !isPrivateActive() && (mention.length > 0 || (turns >= 2 && since >= 4));
   const avoid = msgs.filter(m => m.inv === 'no' && m.invWho).map(m => byId.get(m.invWho)?.name).filter(Boolean);
-  const o = { offer, canInvite: offer, avoid, mention };
+  const o = { offer, canInvite: offer, avoid, mention, roster: schoolRoster() };
 
   // mode berdua: hanya partner yang aktif; yang lain senyap & tidak tahu isi
   if (isPrivateActive()) {
     const partner = privatePartner();
     const others = mem.filter(s => s.id !== partner.id).map(s => promptName(s));
-    const base = PERSONA.build(personaOf(partner), st.lang, st.extra, { offer: false, canInvite: false, avoid: [], mention: [] });
+    const base = PERSONA.build(personaOf(partner), st.lang, st.extra, { offer: false, canInvite: false, avoid: [], mention: [], roster: schoolRoster() });
     const privRule = `\n\n# MODE BERDUA / PRIVASI (WAJIB DIPATUHI)
 Saat ini Sensei sedang ngobrol berdua secara pribadi hanya dengan ${promptName(partner)}. Murid lain (${others.join(', ') || '—'}) sudah undur diri / mode senyap dan TIDAK boleh menulis bubble sama sekali.
 - Hanya tulis bubble dari ${promptName(partner)} (format tetap "Nama: pesan" boleh, atau langsung isi kalau solo).
