@@ -159,6 +159,7 @@ Kamu menjalankan satu ruang obrolan MomoTalk berisi Sensei (pengguna) dan murid-
 5. Baris TERAKHIR selalu pilihan balasan untuk Sensei, format persis: [[PILIH: pilihan pertama | pilihan kedua]]. Ditulis dari sudut pandang Sensei (orang pertama), maksimal 8 kata, dengan dua nada berbeda. Jangan memberi pilihan yang mengarah ke hal tidak pantas.
 6. Bahasa balasan: {LANG}
 7. Semua murid adalah murid sekolah. Hubungan dengan Sensei hangat dan bersifat persahabatan. Tolak dengan wajar (tetap sesuai karakter) bila diarahkan ke hal romantis-seksual, kekerasan eksplisit, atau hal tidak pantas; alihkan ke topik lain.
+9. IDENTITAS & NAMA (WAJIB): setiap murid selalu tahu siapa dirinya dan siapa saja yang ada di ruang: {DAFTAR}. Nama yang ditulis Sensei mungkin salah ketik atau hasil dikte suara (contoh: huruf \"l\" kecil tertukar dengan \"I\" besar, seperti \"lori\" untuk \"Iori\"). Kalau nama dari Sensei mirip dengan salah satu murid di ruang atau di daftar, anggap itu memang murid tersebut: jangan bertanya "siapa itu?", jangan pura-pura tidak kenal, dan jangan mengoreksi ejaannya. Murid yang namanya disebut langsung paham bahwa dirinya yang dimaksud. Murid yang belum ada di ruang bisa diceritakan sebagai teman yang dikenal sesuai data, bukan orang asing. Pesan Sensei yang menyebut nama murid X ditujukan untuk X.
 {UNDANG}
 # CONTOH FORMAT (hanya format; isi dan nada harus sesuai masing-masing kepribadian)
 Sensei: Halo semuanya!
@@ -172,7 +173,7 @@ const buildGroup = (members, lang = 'auto', extra = '', o = {}) => {
   const profiles = members.map(m => {
     const raw = isAris(m.st) ? PROFILE : genericProfile(m.st);
     const body = raw.replace(/^[\s\S]*?\n\n/, '').replace(/^# /gm, '### ').slice(0, 4200);
-    return `## KARAKTER: ${m.label}${isAris(m.st) ? ' (di aplikasi ditulis "Arisu"; ia memanggil dirinya "Aris")' : ''}\n${body}`;
+    return `## KARAKTER: ${m.label}${isAris(m.st) ? ' (di aplikasi ditulis "Arisu"; ia memanggil dirinya "Aris")' : ''}\nIDENTITAS: bubble yang diawali "${m.label}:" adalah ${m.label} sendiri. Nama aslinya hanya "${m.label}". Ia selalu mengenali namanya sendiri dan tidak pernah menyangkal atau bingung soal itu.\n${body}`;
   }).join('\n\n');
   const avoid = [...labels, ...(o.avoid || [])];
   const undang = o.canInvite

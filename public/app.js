@@ -140,6 +140,24 @@ const avImg = (s, cls = 'av', w = 128) => imgTag(avatarUrls(s, w), cls, s.name);
 const personaOf = s => s.det || { id: s.id, name: s.name };
 const promptName = s => (s.id === 'arisu' ? 'Aris' : s.name);
 const norm = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+/* koreksi nama murid yang salah ketik: "lori" (huruf L kecil) -> "Iori" (huruf I besar) tampak sama di font sans.
+   Hanya dipakai untuk teks yang dikirim ke AI dan deteksi sebutan nama; tampilan chat tidak berubah. */
+const lI = t => String(t).toLowerCase().replace(/l/g, 'i');
+let _nameFix = null;
+function nameFixMap() {
+  if (_nameFix && _nameFix.n === LIST.length) return _nameFix.m;
+  const m = new Map();
+  for (const s of LIST) {
+    const base = promptName(s).replace(/\s*\(.*\)$/, '').trim();
+    if (base.length >= 4 && !/\s/.test(base)) m.set(lI(base), base);
+  }
+  _nameFix = { n: LIST.length, m };
+  return m;
+}
+function fixNames(text) {
+  const m = nameFixMap();
+  return String(text || '').replace(/\p{L}{4,}/gu, w => m.get(lI(w)) || w);
+}
 const members = () => (state.cur ? [state.cur, ...state.room.map(id => byId.get(id)).filter(Boolean)] : []);
 const maxRoom = () => Math.min(4, Math.max(2, Number(state.settings.maxRoom) || 3));
 // semua murid yang pernah ada di ruang ini (supaya pesan lama dari murid yang sudah keluar tetap terbaca)
@@ -195,6 +213,7 @@ function findStudent(name) {
 }
 // murid lain yang baru disebut Sensei di pesannya
 function mentionedNames(text) {
+  text = fixNames(text);
   const out = [], inRoom = new Set(members().map(s => s.id));
   for (const s of LIST) {
     if (inRoom.has(s.id)) continue;
@@ -460,7 +479,7 @@ function apiMessages() {
     if (m.priv && (!priv || m.privWith !== partnerId)) return;
     if (m.role === 'user') {
       if (m.sys) push('user', m.content);
-      else push('user', (m.reply ? `(Sensei membalas pesan ${m.reply.name}: "${m.reply.text}")\n` : '') + m.content);
+      else push('user', (m.reply ? `(Sensei membalas pesan ${m.reply.name}: "${m.reply.text}")\n` : '') + fixNames(m.content));
     } else if (m.role === 'join') push('user', `(Catatan sistem: ${promptName(byId.get(m.who) || { name: '?' })} bergabung ke ruang obrolan.)`);
     else if (m.role === 'leave') push('user', `(Catatan sistem: ${promptName(byId.get(m.who) || { name: '?' })} keluar dari ruang obrolan.)`);
     else if (m.role === 'assistant') {
@@ -631,6 +650,7 @@ function send(text, opts = {}) {
   if (joinId) addGuest(joinId);
   state.mention = mentionedNames(text);
   persist(); touchTime();
+  micCancel();                       // hentikan dikte & buang hasil sisa, supaya pesan berikutnya benar-benar baru
   $('#input').value = ''; autosize(); syncSend();
   if (joinId || justStartedPrivate) render();
   renderPrivateBar();
@@ -883,7 +903,7 @@ function autosize() {
 }
 const coarse = matchMedia('(pointer: coarse)').matches;
 
-$('#composer').addEventListener('submit', e => { e.preventDefault(); micStop(); send($('#input').value); });
+$('#composer').addEventListener('submit', e => { e.preventDefault(); const t = $('#input').value; micCancel(); send(t); });
 $('#input').addEventListener('input', () => { autosize(); syncSend(); });
 $('#input').addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey && !coarse && !e.isComposing) { e.preventDefault(); $('#composer').requestSubmit(); }
@@ -1071,25 +1091,34 @@ const MIC_ERR = {
   'audio-capture': 'Mikrofon tidak ditemukan.', 'network': 'Pengenalan suara butuh koneksi internet.',
   'language-not-supported': 'Bahasa mikrofon ini tidak didukung browser.',
 };
-const mic = { rec: null, on: false };
+const mic = { rec: null, on: false, gen: 0 };   // gen = nomor sesi dikte; hasil dari sesi lama diabaikan
 function setMicUI(on) { const b = $('#btnMic'); b.classList.toggle('rec', on); b.setAttribute('aria-pressed', on); b.title = on ? 'Berhenti' : 'Bicara'; }
 function micStop() { try { mic.rec && mic.rec.stop(); } catch { /* abaikan */ } }
+// Batalkan dikte TANPA menunggu hasil terakhir: dipakai saat kirim pesan / pindah chat,
+// supaya teks lama tidak ditulis balik ke kotak pesan (dan tidak terkirim dua kali).
+function micCancel() {
+  mic.gen++;
+  const r = mic.rec; mic.rec = null; mic.on = false; setMicUI(false);
+  if (r) { r.onresult = r.onerror = r.onend = r.onstart = null; try { r.abort(); } catch { /* abaikan */ } }
+}
 function micToggle() {
   if (mic.on) return micStop();
   if (state.busy) return;
   if (!window.isSecureContext) return toast('Mikrofon hanya jalan lewat HTTPS atau localhost.', 5000);
-  const r = new SR(), inp = $('#input');
+  const r = new SR(), inp = $('#input'), gen = ++mic.gen;
   mic.rec = r; r.lang = state.settings.micLang || 'id-ID'; r.interimResults = true; r.continuous = false; r.maxAlternatives = 1;
   const base = inp.value ? inp.value.replace(/\s+$/, '') + ' ' : '';
   let err = '';
-  r.onstart = () => { mic.on = true; setMicUI(true); };
+  r.onstart = () => { if (gen !== mic.gen) return; mic.on = true; setMicUI(true); };
   r.onresult = e => {
+    if (gen !== mic.gen) return;
     let fin = '', tmp = '';
     for (let i = 0; i < e.results.length; i++) (e.results[i].isFinal ? (fin += e.results[i][0].transcript) : (tmp += e.results[i][0].transcript));
     inp.value = base + (fin + tmp).trim(); autosize(); syncSend();
   };
-  r.onerror = e => { err = e.error; };
+  r.onerror = e => { if (gen !== mic.gen) return; err = e.error; };
   r.onend = () => {
+    if (gen !== mic.gen) return;
     mic.on = false; mic.rec = null; setMicUI(false);
     if (err === 'no-speech') toast('Suara tidak terdeteksi');
     else if (err && err !== 'aborted') toast(MIC_ERR[err] || 'Mikrofon error: ' + err, 5000);
@@ -1098,7 +1127,7 @@ function micToggle() {
   try { r.start(); } catch { toast('Mikrofon tidak bisa dimulai'); }
 }
 if (SR) { $('#btnMic').hidden = false; $('#btnMic').addEventListener('click', micToggle); }
-window.addEventListener('hashchange', micStop);
+window.addEventListener('hashchange', micCancel);
 
 (async function init() {
   await loadData();

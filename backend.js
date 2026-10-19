@@ -18,7 +18,7 @@
 
 const state = { url: '', etag: '', at: 0, checkedAt: 0 };
 const KEEP_MS = 5 * 60_000;   // URL yang diingat dianggap segar 5 menit (insurance; biasanya diganti lewat jalur gagal)
-const MIN_GAP = 1_000;        // jarak minimal antar request ke GitHub (anti-spam limit)
+const MIN_GAP = 1_500;        // jarak minimal antar request ke GitHub (anti-spam limit)
 
 const DEAD = new Set([502, 503, 504, 521, 522, 523, 524, 530]);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -102,7 +102,6 @@ export default {
         lastErr = 'Tunnel tidak bisa dihubungi: ' + (e.message || e);
       }
       // tunnel mati / URL berubah -> ambil url.txt terbaru dan ulangi
-      state.checkedAt = 0;
       const fresh = await refreshUrl(env);
       if (fresh) base = fresh;
     }
