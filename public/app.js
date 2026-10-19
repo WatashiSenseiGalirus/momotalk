@@ -259,7 +259,7 @@ function parseAI(raw, host = state.cur, roster = null, live = false) {
     if (pm) { cur = look.get(norm(pm[1])) || cur; l = l.slice(pm[0].length).trim(); }
     if (l) items.push({ who: cur, text: l });
   }
-  const cap = people.length > 1 ? 9 : 6;
+  const cap = people.length > 3 ? 14 : people.length > 1 ? 10 : 6;
   const kept = items.slice(0, cap);
   return { items: kept, lines: kept.map(x => x.text), choices, invite };
 }
@@ -590,13 +590,38 @@ function kick(id) {
   persist(); renderRoomBar(); render(); renderPrivateBar();
 }
 
+/* ---- "sambungkan aku ke semua": sistem langsung memasukkan teman-teman sampai ruang penuh (maks 4 karakter) ---- */
+const CONNECT_ALL_RE = /\b(?:sambung\w*|hubung\w*|panggil\w*|ajak\w*|undang\w*)\s+(?:aku\s+|gue\s+|gw\s+|saya\s+|kita\s+|kami\s+)?(?:ke\s+|sama\s+|dengan\s+|ama\s+)?(?:semua(?:nya)?|mereka|(?:semua\s+)?te(?:man|men)(?:nya|mu|\s*mu|\s*nya)?)\b/i;
+const HARD_ROOM = 4;
+function pickFriends(text, firstId) {
+  const inRoom = new Set(members().map(m => m.id)), out = [];
+  const add = st => { if (st && !inRoom.has(st.id) && !out.includes(st.id)) out.push(st.id); };
+  const plain = st => !/\(/.test(st.title);
+  if (firstId) add(byId.get(firstId));
+  mentionedNames(text).forEach(n => add(findStudent(n)));
+  // teman yang disebut di bagian Hubungan data wiki semua anggota ruang
+  const rel = members().flatMap(m => m.det?.relationships || []).join('\n');
+  for (const st of LIST) {
+    if (!plain(st) || st.title.length < 3) continue;
+    if (new RegExp('(^|[^\\p{L}])' + escRe(st.title) + '(?![\\p{L}])', 'u').test(rel)) add(st);
+  }
+  // lalu teman satu sekolah
+  const schools = new Set(members().map(m => m.det?.school).filter(Boolean));
+  LIST.filter(st => plain(st) && schools.has(st.det?.school)).forEach(add);
+  return out.slice(0, Math.max(0, HARD_ROOM - members().length));
+}
+
 function send(text, opts = {}) {
   text = String(text || '').trim();
   if (!text || state.busy) return;
   const last = state.messages[state.messages.length - 1];
-  let joinId = null;
+  let joinId = null, joinIds = [];
   const pend = pendingInvite(last);
-  if (pend) {          // pesan ini menjawab tawaran sambungan
+  const wantAll = !isPrivateActive() && opts.decline !== true && CONNECT_ALL_RE.test(text) && !NEG_RE.test(text.replace(CONNECT_ALL_RE, ''));
+  if (wantAll) {       // sambungkan semua teman sekaligus, tanpa menunggu satu per satu
+    joinIds = pickFriends(text, pend?.id);
+    if (pend) { last.inv = joinIds.includes(pend.id) ? 'yes' : 'no'; last.invWho = pend.id; }
+  } else if (pend) {          // pesan ini menjawab tawaran sambungan
     const yes = opts.accept === true || (opts.decline !== true && !NEG_RE.test(text) && YES_RE.test(text));
     last.inv = yes ? 'yes' : 'no'; last.invWho = pend.id;
     if (yes) joinId = pend.id;
@@ -654,11 +679,12 @@ function send(text, opts = {}) {
   }
 
   if (joinId) addGuest(joinId);
+  joinIds.forEach(id => addGuest(id));
   state.mention = mentionedNames(text);
   persist(); touchTime();
   micCancel();                       // hentikan dikte & buang hasil sisa, supaya pesan berikutnya benar-benar baru
   $('#input').value = ''; autosize(); syncSend();
-  if (joinId || justStartedPrivate) render();
+  if (joinId || joinIds.length || justStartedPrivate) render();
   renderPrivateBar();
 
   // typing:
@@ -669,6 +695,8 @@ function send(text, opts = {}) {
   let aiOpts = {};
   if (isPrivateActive()) {
     aiOpts.typer = state.private.with;
+  } else if (joinIds.length) {
+    aiOpts.typers = members().map(m => m.id);
   } else if (joinId) {
     aiOpts.typer = joinId;
   } else if (rp && rp.who) {
@@ -756,14 +784,85 @@ function renderList() {
 /* ============ tab: profil, trivia, gallery ============ */
 const importHint = `<div class="hint">Data lengkap murid ini belum diimpor. Rekam HAR halaman wikinya di Chrome (sampai halaman termuat), lalu jalankan <code>python tools/import_har.py file.har</code>.</div>`;
 
+/* ---- terjemahan profil/trivia ke bahasa Indonesia (data wiki berbahasa Inggris), dicache di perangkat ---- */
+const MONTHS = { January: 'Januari', February: 'Februari', March: 'Maret', April: 'April', May: 'Mei', June: 'Juni', July: 'Juli', August: 'Agustus', September: 'September', October: 'Oktober', November: 'November', December: 'Desember' };
+const idDate = t => String(t || '').replace(/\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})\b/g, (_, m, d) => `${d} ${MONTHS[m]}`);
+const trKey = id => 'mt.tr1.' + id;
+const trMem = new Map();      // id -> { path: teks Indonesia }
+const trRun = new Map();      // id -> 'run' | 'err'
+const trLoad = id => { if (!trMem.has(id)) trMem.set(id, load(trKey(id), {})); return trMem.get(id); };
+// kumpulkan semua teks Inggris yang perlu diterjemahkan: [{ path, text }]
+function trSources(s) {
+  const d = s.det, st = s.story, out = [];
+  const add = (path, text) => { if (typeof text === 'string' && text.trim().length > 2) out.push({ path, text }); };
+  if (d) {
+    ['lead', 'intro', 'background', 'hobbies'].forEach(k => add(k, d[k]));
+    (d.relationships || []).forEach((x, i) => add('relationships.' + i, x));
+    (d.trivia || []).forEach((x, i) => add('trivia.' + i, x));
+    add('exSkill.desc', d.exSkill?.desc); add('weapon.desc', d.weapon?.desc);
+  }
+  if (st) {
+    ['main', 'relationship', 'event'].forEach(k => (st[k] || []).forEach((x, i) => add(`story.${k}.${i}`, x)));
+    add('story.other', st.other);
+  }
+  return out;
+}
+// salinan data dengan teks yang sudah diterjemahkan (kalau belum ada, teks asli dipakai dulu)
+function trView(s) {
+  const c = trLoad(s.id), d = s.det ? JSON.parse(JSON.stringify(s.det)) : null, st = s.story ? JSON.parse(JSON.stringify(s.story)) : null;
+  const put = (path, v) => {
+    const p = path.split('.'); let o = p[0] === 'story' ? st : d; if (!o) return;
+    const ks = p[0] === 'story' ? p.slice(1) : p;
+    for (let i = 0; i < ks.length - 1; i++) o = o?.[ks[i]];
+    if (o && ks[ks.length - 1] in o) o[ks[ks.length - 1]] = v;
+  };
+  Object.entries(c).forEach(([k, v]) => put(k, v));
+  if (d?.birthday) d.birthday = idDate(d.birthday);
+  return { d, st };
+}
+async function trEnsure(s) {
+  const need = trSources(s).filter(x => !(x.path in trLoad(s.id)));
+  if (!need.length || trRun.get(s.id) === 'run') return;
+  trRun.set(s.id, 'run');
+  const cache = trLoad(s.id);
+  const refresh = () => { if (state.cur === s) { if (state.tab === 'profil') renderProfil(s); if (state.tab === 'trivia') renderTrivia(s); } };
+  refresh();
+  // bagi jadi beberapa permintaan kecil
+  const batches = []; let cur = [], len = 0;
+  for (const x of need) { if (cur.length && (len + x.text.length > 4500 || cur.length >= 12)) { batches.push(cur); cur = []; len = 0; } cur.push(x); len += x.text.length; }
+  if (cur.length) batches.push(cur);
+  try {
+    for (const b of batches) {
+      const sys = 'Kamu penerjemah. Terjemahkan setiap elemen array JSON dari pengguna ke bahasa Indonesia yang natural dan mudah dibaca. Pertahankan nama orang, nama sekolah, nama klub/organisasi, nama skill/senjata, dan istilah khas Blue Archive apa adanya (boleh diberi padanan Indonesia bila lazim). Jangan menambah atau mengurangi isi. Balas HANYA array JSON berisi string terjemahan dengan jumlah dan urutan elemen yang sama, tanpa teks lain, tanpa markdown.';
+      const txt = await streamChat([{ role: 'system', content: sys }, { role: 'user', content: JSON.stringify(b.map(x => x.text)) }], () => {});
+      const clean = String(txt).replace(/<think>[\s\S]*?(<\/think>|$)/gi, '');
+      const arr = JSON.parse(clean.slice(clean.indexOf('['), clean.lastIndexOf(']') + 1));
+      if (!Array.isArray(arr) || arr.length !== b.length) throw new Error('format terjemahan tidak cocok');
+      b.forEach((x, i) => { if (typeof arr[i] === 'string' && arr[i].trim()) cache[x.path] = arr[i].trim(); });
+      try { localStorage.setItem(trKey(s.id), JSON.stringify(cache)); } catch { /* penyimpanan penuh */ }
+      refresh();
+    }
+    trRun.delete(s.id);
+  } catch (e) { trRun.set(s.id, 'err'); }
+  refresh();
+}
+function trHint(s) {
+  const left = trSources(s).some(x => !(x.path in trLoad(s.id)));
+  const st = trRun.get(s.id);
+  if (st === 'run') return '<div class="hint">Menerjemahkan ke bahasa Indonesia…</div>';
+  if (st === 'err' && left) return '<div class="hint">Terjemahan belum berhasil, teks asli (Inggris) ditampilkan. Buka tab ini lagi untuk mencoba ulang.</div>';
+  return '';
+}
+
 function renderProfil(s) {
-  const d = s.det;
-  const prof = d?.images?.['Profile Image']?.[0]?.url || s.conv?.profile;
+  if (trRun.get(s.id) !== 'run' && trRun.get(s.id) !== 'err') trEnsure(s); else if (trRun.get(s.id) === 'err' && state.tab === 'profil' && !s._trRetry) { s._trRetry = 1; trRun.delete(s.id); trEnsure(s); }
+  const d = trView(s).d;
+  const prof = s.det?.images?.['Profile Image']?.[0]?.url || s.conv?.profile;
   const rows = d ? [['Nama lengkap', [d.fullName, d.nameJP].filter(Boolean).join(' · ')], ['Sekolah', d.school], ['Peran', d.role], ['Kelas tempur', d.combatClass],
     ['Damage', d.damageType], ['Armor', d.armorType], ['Usia', d.age], ['Ulang tahun', d.birthday], ['Tinggi', d.height], ['Hobi', d.hobbies],
     ['Desainer', d.designer], ['Ilustrator', d.illustrator], ['Pengisi suara', d.voice], ['Rilis JP', d.releaseJP], ['Rilis Global', d.releaseGL]].filter(r => r[1]) : [];
   const stars = d?.rarity ? '★'.repeat(d.rarity) : '';
-  $('#pProfil').innerHTML =
+  $('#pProfil').innerHTML = trHint(s) +
     `<div class="pf-top">${imgTag(chain(prof, 266), 'pf-photo', s.name)}<div class="pf-id"><h2>${esc(s.name)}</h2>` +
     `<div class="sub">${esc([d?.fullName, d?.nameJP].filter(Boolean).join(' · '))}</div>${stars ? `<div class="stars">${stars}</div>` : ''}</div></div>` +
     (rows.length ? `<div class="kv">${rows.map(r => `<div class="k">${esc(r[0])}</div><div>${esc(r[1])}</div>`).join('')}</div>` : '') +
@@ -777,9 +876,10 @@ function renderProfil(s) {
 }
 
 function renderTrivia(s) {
-  const d = s.det, st = s.story;
+  if (trRun.get(s.id) !== 'run' && trRun.get(s.id) !== 'err') trEnsure(s);
+  const { d, st } = trView(s);
   const ul = (arr, cls = '') => `<ul class="tv ${cls}">${arr.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`;
-  let h = '';
+  let h = trHint(s);
   if (d?.trivia?.length) h += `<div class="sec-h">Trivia</div>${ul(d.trivia)}`;
   if (st?.main?.length) h += `<div class="sec-h">Cerita utama (Main Story)</div>${ul(st.main)}`;
   if (st?.relationship?.length) h += `<div class="sec-h">Relationship Story</div>${ul(st.relationship, 'pink')}`;
