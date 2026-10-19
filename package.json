@@ -1,0 +1,12 @@
+{
+  "name": "momotalk-aris-ai",
+  "version": "4.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Chat gaya MomoTalk (Blue Archive) dengan AI berkarakter, banyak murid, bisa disambungkan dalam satu ruang obrolan.",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": { "node": ">=18" }
+}

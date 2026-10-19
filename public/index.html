@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f991a1">
+<meta name="referrer" content="no-referrer">
+<title>MomoTalk</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23f991a1'/%3E%3Cpath d='M7 9h18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H15l-5 4v-4H7a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2z' fill='white'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="phone" id="phone">
+
+  <header class="mt-head">
+    <button class="hbtn" id="btnBack" aria-label="Kembali" title="Kembali" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+    </button>
+    <h1 id="hTitle">MomoTalk</h1>
+    <button class="hbtn" id="btnSettings" aria-label="Pengaturan" title="Pengaturan">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/><path d="M19.4 13.5a7.7 7.7 0 0 0 0-3l2-1.6-2-3.4-2.4.8a7.6 7.6 0 0 0-2.6-1.5L14 2h-4l-.4 2.8a7.6 7.6 0 0 0-2.6 1.5l-2.4-.8-2 3.4 2 1.6a7.7 7.7 0 0 0 0 3l-2 1.6 2 3.4 2.4-.8a7.6 7.6 0 0 0 2.6 1.5L10 22h4l.4-2.8a7.6 7.6 0 0 0 2.6-1.5l2.4.8 2-3.4z"/></svg>
+    </button>
+    <button class="hbtn" id="btnReset" aria-label="Mulai ulang percakapan" title="Mulai ulang percakapan" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19"/></svg>
+    </button>
+  </header>
+
+  <!-- ===== daftar murid ===== -->
+  <section class="view" id="vList">
+    <div class="list-tools">
+      <input id="q" type="search" placeholder="Cari murid..." autocomplete="off" aria-label="Cari murid">
+      <select id="sortBy" aria-label="Urutkan">
+        <option value="name">Nama</option>
+        <option value="recent">Terbaru</option>
+      </select>
+    </div>
+    <div class="list-lbl">Semua Murid <span id="cnt"></span></div>
+    <div class="list-scroll" id="students"></div>
+  </section>
+
+  <!-- ===== satu murid ===== -->
+  <section class="view" id="vStudent" hidden>
+    <nav class="tabs" id="tabs" role="tablist">
+      <button type="button" role="tab" data-tab="chat" class="on">Chat</button>
+      <button type="button" role="tab" data-tab="profil">Profil</button>
+      <button type="button" role="tab" data-tab="trivia">Trivia</button>
+      <button type="button" role="tab" data-tab="gallery">Gallery</button>
+    </nav>
+
+    <div class="pane" id="pChat">
+      <div class="room-bar solo" id="roomBar" aria-label="Anggota percakapan"></div>
+      <div class="priv-bar" id="privBar" hidden aria-label="Mode berdua"></div>
+      <main class="mt-scroll" id="scroll">
+        <div id="list" aria-live="polite"></div>
+        <div id="choices"></div>
+        <div class="pad"></div>
+      </main>
+      <div class="reply-bar" id="replyBar" hidden></div>
+      <form class="mt-compose" id="composer" autocomplete="off">
+        <textarea id="input" rows="1" placeholder="Ketik pesan..." enterkeyhint="send"></textarea>
+        <button class="send mic" id="btnMic" type="button" aria-label="Bicara (mikrofon)" aria-pressed="false" title="Bicara" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14.5a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5.5a3 3 0 0 0 3 3z"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3" fill="none"/></svg>
+        </button>
+        <button class="send" id="btnSend" type="submit" aria-label="Kirim" title="Kirim" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5L21 3l-6.5 18-3.2-7.3z"/></svg>
+        </button>
+        <button class="send stop" id="btnStop" type="button" aria-label="Hentikan" title="Hentikan" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
+        </button>
+      </form>
+    </div>
+
+    <div class="pane pane-scroll" id="pProfil" hidden></div>
+    <div class="pane pane-scroll" id="pTrivia" hidden></div>
+    <div class="pane pane-scroll" id="pGallery" hidden></div>
+  </section>
+</div>
+
+<dialog id="settings">
+  <form method="dialog" class="dlg">
+    <h3>Pengaturan</h3>
+
+    <div class="av-row" id="avRow">
+      <img id="avPreview" class="av big" alt="Foto murid">
+      <div>
+        <label class="file-btn">Ganti foto<input type="file" id="avFile" accept="image/*" hidden></label>
+        <button type="button" class="btn ghost" id="avReset">Foto wiki</button>
+        <small>Hanya untuk murid yang sedang dibuka. Disimpan di peramban ini.</small>
+      </div>
+    </div>
+
+    <label>Bahasa balasan
+      <select id="setLang">
+        <option value="auto">Otomatis (ikuti bahasa Sensei)</option>
+        <option value="id">Bahasa Indonesia</option>
+        <option value="en">English</option>
+      </select>
+    </label>
+    <label>Bahasa mikrofon
+      <select id="setMicLang">
+        <option value="id-ID">Indonesia</option>
+        <option value="en-US">English (US)</option>
+        <option value="ja-JP">日本語</option>
+      </select>
+    </label>
+    <label class="check"><input type="checkbox" id="setMicAuto"> Kirim otomatis setelah selesai bicara</label>
+    <label>Model <small>(kosong = bawaan server)</small>
+      <input id="setModel" placeholder="Akunfree">
+    </label>
+    <label>Temperatur: <b id="tempVal">0.8</b>
+      <input id="setTemp" type="range" min="0" max="1.4" step="0.1">
+    </label>
+    <label class="check"><input type="checkbox" id="setEvents"> Munculkan kartu Relationship Event secara berkala</label>
+    <label class="check"><input type="checkbox" id="setInvites"> Karakter boleh menawarkan sambungan ke murid lain</label>
+    <label>Maks. karakter dalam 1 ruang obrolan <small>(termasuk murid yang kamu buka)</small>
+      <select id="setMaxRoom">
+        <option value="2">2 karakter</option>
+        <option value="3">3 karakter</option>
+        <option value="4">4 karakter</option>
+      </select>
+    </label>
+    <label>Catatan tambahan untuk murid <small>(opsional, mis. panggilan khusus untuk Sensei)</small>
+      <textarea id="setExtra" rows="3" maxlength="1500" placeholder="Contoh: Panggil aku Sensei Rafi."></textarea>
+    </label>
+    <label>Kata sandi aplikasi <small>(jika server memakai APP_PASSWORD)</small>
+      <input id="setPass" type="password" autocomplete="off">
+    </label>
+
+    <details id="sessBox">
+      <summary>Sesi browser ini</summary>
+      <p class="sess-note">Chat, foto, dan pengaturan disimpan <b>hanya di browser ini</b> (ID sesi <code id="sessId"></code>). Server tidak menyimpan riwayat, dan pengguna lain tidak bisa melihat sesi ini.</p>
+      <div class="sess-btns">
+        <button type="button" class="btn" id="sessExport">Ekspor sesi</button>
+        <label class="btn file-btn">Impor sesi<input type="file" id="sessImport" accept="application/json,.json" hidden></label>
+        <button type="button" class="btn danger" id="sessWipe">Hapus semua &amp; sesi baru</button>
+      </div>
+    </details>
+
+    <details id="personaBox">
+      <summary>Lihat prompt karakter</summary>
+      <textarea id="personaView" rows="10" readonly spellcheck="false"></textarea>
+      <small>Dibangun otomatis dari <code>public/data/students.json</code>. Aris memakai prompt khusus di <code>public/persona.js</code>.</small>
+    </details>
+
+    <div class="dlg-actions">
+      <button class="btn" value="cancel">Batal</button>
+      <button class="btn primary" value="save" id="setSave">Simpan</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="story">
+  <div class="dlg">
+    <div class="story-head"><b id="storyTitle">Relationship Story</b><button type="button" class="hbtn dark" id="storyClose" aria-label="Tutup"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19"/></svg></button></div>
+    <div class="story-body" id="storyBody"></div>
+  </div>
+</dialog>
+
+<dialog id="picker">
+  <div class="dlg">
+    <div class="story-head"><b>Sambungkan murid lain</b><button type="button" class="hbtn dark" id="pkClose" aria-label="Tutup"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19"/></svg></button></div>
+    <input id="pkQ" type="search" placeholder="Cari murid..." autocomplete="off" aria-label="Cari murid">
+    <div class="pk-list" id="pkList"></div>
+  </div>
+</dialog>
+
+<div class="msg-menu" id="msgMenu" hidden role="menu"></div>
+
+<dialog id="lightbox" class="lb"><img id="lbImg" alt=""><div id="lbCap"></div></dialog>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="persona.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
